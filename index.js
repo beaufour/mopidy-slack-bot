@@ -1,3 +1,5 @@
+const ANNOUNCE_CHANNEL = 'CGVBBLERJ';
+
 const { App, LogLevel } = require('@slack/bolt');
 
 var getTrackName = function(track) {
@@ -74,6 +76,37 @@ const mopidy = new Mopidy({
     webSocketUrl: 'ws://mopidy:6680/mopidy/ws/',
 });
 
+mopidy.on('event:trackPlaybackStarted', function (event) {
+    // Event: https://docs.mopidy.com/en/latest/api/models/#mopidy.models.TlTrack
+    var track = event.tl_track.track;
+    // TODO: .tlid is the tracklist id, which can be combined with the tlid in:
+    // https://netdj.beaufour.dk/iris/http/get_queue_metadata
+    /* result: {
+       queue_metadata: {
+       tlid_12775: {
+       tlid: 12775,
+       added_by: "beaufour",
+       added_from: "iris:search:all:foo fighters"
+       }
+       }
+       }
+    */
+    var msg = 'Playing: ' + getTrackName(track);
+    console.log(msg);
+
+    try {
+        const result = app.client.chat.postMessage({
+            // TODO: ugly to use the token directly
+            token: process.env.SLACK_BOT_TOKEN,
+            channel: ANNOUNCE_CHANNEL,
+            text: msg,
+        });
+    }
+    catch (error) {
+        console.error('got error sending message: ', error);
+    }
+});
+
 // These are just for debugging, as they log every event from Mopidy
 mopidy.on('state', console.log);
 mopidy.on('event', console.log);
@@ -88,7 +121,8 @@ const app = new App({
     logLevel: LogLevel.DEBUG,
 });
 
-function post_message(event, context) {
+// Construct a say() command from an event and a context
+function get_say(event, context) {
     return async function(text) {
         try {
             const result = await app.client.chat.postMessage({
@@ -117,16 +151,15 @@ app.message('current', ({ message, say }) => {
 
 app.event('app_mention', async ({ event, context }) => {
     if (event.text.match(/^<.+> queue/)) {
-        controller.queue(post_message(event, context));
+        controller.queue(get_say(event, context));
     } else if (event.text.match(/^<.+> skip/)) {
-        controller.skip(post_message(event, context));
+        controller.skip(get_say(event, context));
     } else if (event.text.match(/^<.+> current/)) {
-    controller.current(post_message(event, context));
+    controller.current(get_say(event, context));
 }
 });
 
 (async () => {
-    var port = process.env.PORT || 3000;
-    await app.start(port);
-    console.log('Mopidy Bot is running on port', port);
+    const server = await app.start(process.env.PORT || 3000);
+    console.log('Mopidy Bot is running:', server.address());
 })();
