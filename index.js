@@ -1,3 +1,4 @@
+// TODO: should be configuration variable
 const ANNOUNCE_CHANNEL = 'CGVBBLERJ';
 
 const { App, LogLevel } = require('@slack/bolt');
