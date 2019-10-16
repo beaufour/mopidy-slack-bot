@@ -74,7 +74,7 @@ controller.newTrack = async function (event) {
     var track = event.tl_track.track;
     // TLID is the connection between Mopidy and the Iris metadata
     var tlid = event.tl_track.tlid;
-    debug('Will look up Irisi metadata for track #', tlid);
+    debug('Will look up Iris metadata for track #', tlid);
     try {
         var iris_data = await rp({
             uri: 'http://' + MOPIDY_HOST_PORT + '/iris/http/get_queue_metadata',
