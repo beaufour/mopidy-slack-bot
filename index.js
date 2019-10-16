@@ -6,6 +6,9 @@ const MOPIDY_HOST_PORT = process.env.SLACK_BOT_MOPIDY_HOST_PORT || 'localhost:66
 
 const { App, LogLevel } = require('@slack/bolt');
 
+
+//////////////////////////////////////////////////////////////////////
+// Main logic
 var getTrackName = function(track) {
     var artist = 'Unknown Artist';
     if (track.artists && track.artists.length) {
@@ -73,13 +76,7 @@ controller.current = function(say) {
     mopidy.playback.getCurrentTrack().then(trackHandler, failureHandler);
 };
 
-const Mopidy = require('mopidy');
-var mopidyConf = {
-    webSocketUrl: 'ws://' + MOPIDY_HOST_PORT + '/mopidy/ws/'
-};
-const mopidy = new Mopidy(mopidyConf);
-
-mopidy.on('event:trackPlaybackStarted', function (event) {
+controller.newTrack = function (event) {
     // Event: https://docs.mopidy.com/en/latest/api/models/#mopidy.models.TlTrack
     var track = event.tl_track.track;
     // TLID is the connection between Mopidy and the Iris metadata
@@ -124,17 +121,30 @@ mopidy.on('event:trackPlaybackStarted', function (event) {
         .catch(function(err) {
             console.error('Got error from Iris HTTP call:', err);
         });
+};
+
+
+//////////////////////////////////////////////////////////////////////
+// Mopidy
+const Mopidy = require('mopidy');
+var mopidyConf = {
+    webSocketUrl: 'ws://' + MOPIDY_HOST_PORT + '/mopidy/ws/'
+};
+const mopidy = new Mopidy(mopidyConf);
+mopidy.on('state:online', function () {
+    debug('Connected to Mopidy');
 });
+
+mopidy.on('event:trackPlaybackStarted', controller.newTrack);
 
 // These are just for debugging, as they log every event from Mopidy
 var mopidy_debug = require('debug')('mopidy');
 mopidy.on('state', mopidy_debug);
 mopidy.on('event', mopidy_debug);
 
-mopidy.on('state:online', function () {
-    debug('Connected to Mopidy');
-});
 
+//////////////////////////////////////////////////////////////////////
+// Bolt
 const bolt_config = {
     signingSecret: process.env.SLACK_SIGNING_SECRET,
     token: process.env.SLACK_BOT_TOKEN
@@ -183,6 +193,9 @@ app.event('app_mention', async ({ event, context }) => {
 }
 });
 
+
+//////////////////////////////////////////////////////////////////////
+// Main
 (async () => {
     const server = await app.start(process.env.SLACK_BOT_PORT || 3000);
     console.log('Mopidy Slack Bot is running:', server.address());
