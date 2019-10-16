@@ -1,4 +1,5 @@
 var rp = require('request-promise');
+var debug = require('debug')('slack-bot');
 
 const ANNOUNCE_CHANNEL = process.env.SLACK_BOT_CHANNEL;
 const MOPIDY_HOST_PORT = process.env.SLACK_BOT_MOPIDY_HOST_PORT || 'localhost:6680';
@@ -16,18 +17,18 @@ var getTrackName = function(track) {
 const controller = {};
 
 controller.queue = function(say) {
-    console.log('>> queue');
+    debug('Handling \'queue\' command');
 
     const tracksHandler = tracks => {
-        console.log('Empty queue');
+        debug('Empty queue');
         if (!tracks || !tracks.length) {
             say('Queue is empty');
             return;
         }
-        console.log('Tracks:', tracks);
+        debug('Tracks:', tracks);
 
         const indexHandler = index => {
-            console.log('Got index: ', index);
+            debug('Got index: ', index);
             tracks = tracks.slice(index + 1, index + 6);
             var msg = '';
             for (var i = 0; i < tracks.length; ++i) {
@@ -46,20 +47,20 @@ controller.queue = function(say) {
 };
 
 controller.skip = function(say) {
-    console.log('>> skip');
+    debug('Handling \'skip\' command');
     say('Skipping current song');
     mopidy.playback.next();
 };
 
 controller.current = function(say) {
-    console.log('>> current');
+    debug('Handling \'current\' command');
 
     const trackHandler = track => {
         var msg = 'Nothing';
         if (track) {
             msg = getTrackName(track);
         }
-        console.log('Current track: ', msg);
+        debug('Current track: ', msg);
         msg = 'Currently playing: ' + msg;
         say(msg);
         return;
@@ -83,7 +84,7 @@ mopidy.on('event:trackPlaybackStarted', function (event) {
     var track = event.tl_track.track;
     // TLID is the connection between Mopidy and the Iris metadata
     var tlid = event.tl_track.tlid;
-    console.log('Will look up Irisi metadata for track #', tlid);
+    debug('Will look up Irisi metadata for track #', tlid);
     var req = {
         uri: 'http://' + MOPIDY_HOST_PORT + '/iris/http/get_queue_metadata',
         json: true
@@ -94,8 +95,7 @@ mopidy.on('event:trackPlaybackStarted', function (event) {
 
             if (iris_data.result && iris_data.result.queue_metadata) {
                 var metadata = iris_data.result.queue_metadata;
-                // TODO: only debug
-                console.log('Got iris data:', metadata);
+                debug('Got iris data:', metadata);
                 var track_info = metadata['tlid_' + tlid];
                 if (track_info) {
                     var added_by = track_info['added_by'];
@@ -105,7 +105,7 @@ mopidy.on('event:trackPlaybackStarted', function (event) {
                 }
             }
 
-            console.log(msg);
+            debug(msg);
 
             try {
                 const result = app.client.chat.postMessage({
@@ -127,20 +127,23 @@ mopidy.on('event:trackPlaybackStarted', function (event) {
 });
 
 // These are just for debugging, as they log every event from Mopidy
-// TODO: only debug
-mopidy.on('state', console.log);
-mopidy.on('event', console.log);
+var mopidy_debug = require('debug')('mopidy');
+mopidy.on('state', mopidy_debug);
+mopidy.on('event', mopidy_debug);
 
 mopidy.on('state:online', function () {
-    console.log('Connected to Mopidy');
+    debug('Connected to Mopidy');
 });
 
-const app = new App({
+const bolt_config = {
     signingSecret: process.env.SLACK_SIGNING_SECRET,
-    token: process.env.SLACK_BOT_TOKEN,
-    // TODO: only debug
-    logLevel: LogLevel.DEBUG,
-});
+    token: process.env.SLACK_BOT_TOKEN
+};
+var bolt_debug = require('debug')('bolt');
+if (bolt_debug.enabled) {
+    bolt_config['logLevel'] = LogLevel.DEBUG;
+}
+const app = new App(bolt_config);
 
 // Construct a say() command from an event and a context
 function get_say(event, context) {
@@ -182,5 +185,5 @@ app.event('app_mention', async ({ event, context }) => {
 
 (async () => {
     const server = await app.start(process.env.SLACK_BOT_PORT || 3000);
-    console.log('Mopidy Bot is running:', server.address());
+    console.log('Mopidy Slack Bot is running:', server.address());
 })();
