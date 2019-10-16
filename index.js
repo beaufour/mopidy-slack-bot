@@ -1,3 +1,5 @@
+var rp = require('request-promise');
+
 const ANNOUNCE_CHANNEL = process.env.SLACK_BOT_CHANNEL;
 
 const { App, LogLevel } = require('@slack/bolt');
@@ -81,35 +83,54 @@ const mopidy = new Mopidy(mopidyConf);
 mopidy.on('event:trackPlaybackStarted', function (event) {
     // Event: https://docs.mopidy.com/en/latest/api/models/#mopidy.models.TlTrack
     var track = event.tl_track.track;
-    // TODO: .tlid is the tracklist id, which can be combined with the tlid in:
-    // https://netdj.beaufour.dk/iris/http/get_queue_metadata
-    /* result: {
-       queue_metadata: {
-       tlid_12775: {
-       tlid: 12775,
-       added_by: "beaufour",
-       added_from: "iris:search:all:foo fighters"
-       }
-       }
-       }
-    */
-    var msg = 'Playing: ' + getTrackName(track);
-    console.log(msg);
+    // TLID is the connection between Mopidy and the Iris metadata
+    var tlid = event.tl_track.tlid;
+    console.log('Will look up Irisi metadata for track #', tlid);
+    var req = {
+        // TODO: make option, MOPIDY_HOST_PORT
+        uri: 'http://mopidy:6680/iris/http/get_queue_metadata',
+        json: true
+    };
+    rp(req)
+        .then(function(iris_data) {
+            var msg = 'Playing: ' + getTrackName(track);
 
-    try {
-        const result = app.client.chat.postMessage({
-            // TODO: ugly to use the token directly
-            token: process.env.SLACK_BOT_TOKEN,
-            channel: ANNOUNCE_CHANNEL,
-            text: msg,
+            if (iris_data.result && iris_data.result.queue_metadata) {
+                var metadata = iris_data.result.queue_metadata;
+                // TODO: only debug
+                console.log('Got iris data:', metadata);
+                var track_info = metadata['tlid_' + tlid];
+                if (track_info) {
+                    var added_by = track_info['added_by'];
+                    if (added_by) {
+                        msg += ' [Added by: ' + added_by + ']';
+                    }
+                }
+            }
+
+            console.log(msg);
+
+            try {
+                const result = app.client.chat.postMessage({
+                    // TODO: ugly to use the token directly
+                    token: process.env.SLACK_BOT_TOKEN,
+                    channel: ANNOUNCE_CHANNEL,
+                    text: msg,
+                });
+            }
+            catch (error) {
+                console.error('got error sending message: ', error);
+            }
+
+
+        })
+        .catch(function(err) {
+            console.error('Got error from Iris HTTP call:', err);
         });
-    }
-    catch (error) {
-        console.error('got error sending message: ', error);
-    }
 });
 
 // These are just for debugging, as they log every event from Mopidy
+// TODO: only debug
 mopidy.on('state', console.log);
 mopidy.on('event', console.log);
 
@@ -120,6 +141,7 @@ mopidy.on('state:online', function () {
 const app = new App({
     signingSecret: process.env.SLACK_SIGNING_SECRET,
     token: process.env.SLACK_BOT_TOKEN,
+    // TODO: only debug
     logLevel: LogLevel.DEBUG,
 });
 
