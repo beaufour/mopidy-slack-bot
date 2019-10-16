@@ -1,5 +1,4 @@
-// TODO: should be configuration variable
-const ANNOUNCE_CHANNEL = 'CGVBBLERJ';
+const ANNOUNCE_CHANNEL = process.env.SLACK_BOT_CHANNEL;
 
 const { App, LogLevel } = require('@slack/bolt');
 
@@ -72,10 +71,12 @@ controller.current = function(say) {
 
 const Mopidy = require('mopidy');
 
-const mopidy = new Mopidy({
-    // TODO should be a configuration variable
-    webSocketUrl: 'ws://mopidy:6680/mopidy/ws/',
-});
+var mopidyConf = {};
+if (process.env.SLACK_BOT_WS_URL) {
+    mopidyConf['webSocketUrl'] = process.env.SLACK_BOT_WS_URL;
+}
+
+const mopidy = new Mopidy(mopidyConf);
 
 mopidy.on('event:trackPlaybackStarted', function (event) {
     // Event: https://docs.mopidy.com/en/latest/api/models/#mopidy.models.TlTrack
@@ -161,6 +162,6 @@ app.event('app_mention', async ({ event, context }) => {
 });
 
 (async () => {
-    const server = await app.start(process.env.PORT || 3000);
+    const server = await app.start(process.env.SLACK_BOT_PORT || 3000);
     console.log('Mopidy Bot is running:', server.address());
 })();
