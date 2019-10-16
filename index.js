@@ -19,10 +19,11 @@ var getTrackName = function(track) {
 
 const controller = {};
 
-controller.queue = function(say) {
+controller.queue = async function(say) {
     debug('Handling \'queue\' command');
 
-    const tracksHandler = tracks => {
+    try {
+        var tracks = await mopidy.tracklist.getTracks();
         debug('Empty queue');
         if (!tracks || !tracks.length) {
             say('Queue is empty');
@@ -30,23 +31,18 @@ controller.queue = function(say) {
         }
         debug('Tracks:', tracks);
 
-        const indexHandler = index => {
-            debug('Got index: ', index);
-            tracks = tracks.slice(index + 1, index + 6);
-            var msg = '';
-            for (var i = 0; i < tracks.length; ++i) {
-                msg = msg + (i + 1) + '. ' + getTrackName(tracks[i]) + '\n';
-            }
-            say('Here is the queue:\n' + msg);
-        };
-
-        mopidy.tracklist.index().then(indexHandler, failureHandler);
-    };
-    const failureHandler = () => {
-        console.warn('Could not get queue: ');
+        var index = await mopidy.tracklist.index();
+        debug('Got index: ', index);
+        tracks = tracks.slice(index + 1, index + 6);
+        var msg = '';
+        for (var i = 0; i < tracks.length; ++i) {
+            msg = msg + (i + 1) + '. ' + getTrackName(tracks[i]) + '\n';
+        }
+        say('Here is the queue:\n' + msg);
+    } catch (error) {
+        console.warn('Could not get queue: ', error);
         say('Could not get queue :(');
     };
-    mopidy.tracklist.getTracks().then(tracksHandler, failureHandler);
 };
 
 controller.skip = function(say) {
@@ -55,10 +51,11 @@ controller.skip = function(say) {
     mopidy.playback.next();
 };
 
-controller.current = function(say) {
+controller.current = async function(say) {
     debug('Handling \'current\' command');
 
-    const trackHandler = track => {
+    try {
+        var track = await mopidy.playback.getCurrentTrack();
         var msg = 'Nothing';
         if (track) {
             msg = getTrackName(track);
@@ -66,61 +63,53 @@ controller.current = function(say) {
         debug('Current track: ', msg);
         msg = 'Currently playing: ' + msg;
         say(msg);
-        return;
-    };
-
-    const failureHandler = () => {
-        console.warn('Could not get current track: ');
+    } catch(error) {
+        console.warn('Could not get current track: ', error);
         say('Could not get current track :(');
     };
-    mopidy.playback.getCurrentTrack().then(trackHandler, failureHandler);
 };
 
-controller.newTrack = function (event) {
+controller.newTrack = async function (event) {
     // Event: https://docs.mopidy.com/en/latest/api/models/#mopidy.models.TlTrack
     var track = event.tl_track.track;
     // TLID is the connection between Mopidy and the Iris metadata
     var tlid = event.tl_track.tlid;
     debug('Will look up Irisi metadata for track #', tlid);
-    var req = {
-        uri: 'http://' + MOPIDY_HOST_PORT + '/iris/http/get_queue_metadata',
-        json: true
-    };
-    rp(req)
-        .then(function(iris_data) {
-            var msg = 'Playing: ' + getTrackName(track);
+    try {
+        var iris_data = await rp({
+            uri: 'http://' + MOPIDY_HOST_PORT + '/iris/http/get_queue_metadata',
+            json: true
+        });
+        var msg = 'Playing: ' + getTrackName(track);
 
-            if (iris_data.result && iris_data.result.queue_metadata) {
-                var metadata = iris_data.result.queue_metadata;
-                debug('Got iris data:', metadata);
-                var track_info = metadata['tlid_' + tlid];
-                if (track_info) {
-                    var added_by = track_info['added_by'];
-                    if (added_by) {
-                        msg += ' [Added by: ' + added_by + ']';
-                    }
+        if (iris_data.result && iris_data.result.queue_metadata) {
+            var metadata = iris_data.result.queue_metadata;
+            debug('Got iris data:', metadata);
+            var track_info = metadata['tlid_' + tlid];
+            if (track_info) {
+                var added_by = track_info['added_by'];
+                if (added_by) {
+                    msg += ' [Added by: ' + added_by + ']';
                 }
             }
+        }
 
-            debug(msg);
+        debug(msg);
 
-            try {
-                const result = app.client.chat.postMessage({
-                    // TODO: ugly to use the token directly
-                    token: process.env.SLACK_BOT_TOKEN,
-                    channel: ANNOUNCE_CHANNEL,
-                    text: msg,
-                });
-            }
-            catch (error) {
-                console.error('got error sending message: ', error);
-            }
-
-
-        })
-        .catch(function(err) {
-            console.error('Got error from Iris HTTP call:', err);
-        });
+        try {
+            const result = app.client.chat.postMessage({
+                // TODO: ugly to use the token directly
+                token: process.env.SLACK_BOT_TOKEN,
+                channel: ANNOUNCE_CHANNEL,
+                text: msg,
+            });
+        }
+        catch (error) {
+            console.error('got error sending message: ', error);
+        }
+    } catch (error) {
+            console.error('Got error from Iris HTTP call:', error);
+    };
 };
 
 
