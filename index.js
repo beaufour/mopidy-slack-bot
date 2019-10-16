@@ -1,6 +1,7 @@
 var rp = require('request-promise');
 
 const ANNOUNCE_CHANNEL = process.env.SLACK_BOT_CHANNEL;
+const MOPIDY_HOST_PORT = process.env.SLACK_BOT_MOPIDY_HOST_PORT || 'localhost:6680';
 
 const { App, LogLevel } = require('@slack/bolt');
 
@@ -72,12 +73,9 @@ controller.current = function(say) {
 };
 
 const Mopidy = require('mopidy');
-
-var mopidyConf = {};
-if (process.env.SLACK_BOT_WS_URL) {
-    mopidyConf['webSocketUrl'] = process.env.SLACK_BOT_WS_URL;
-}
-
+var mopidyConf = {
+    webSocketUrl: 'ws://' + MOPIDY_HOST_PORT + '/mopidy/ws/'
+};
 const mopidy = new Mopidy(mopidyConf);
 
 mopidy.on('event:trackPlaybackStarted', function (event) {
@@ -87,8 +85,7 @@ mopidy.on('event:trackPlaybackStarted', function (event) {
     var tlid = event.tl_track.tlid;
     console.log('Will look up Irisi metadata for track #', tlid);
     var req = {
-        // TODO: make option, MOPIDY_HOST_PORT
-        uri: 'http://mopidy:6680/iris/http/get_queue_metadata',
+        uri: 'http://' + MOPIDY_HOST_PORT + '/iris/http/get_queue_metadata',
         json: true
     };
     rp(req)
