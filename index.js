@@ -3,6 +3,7 @@ var debug = require('debug')('slack-bot');
 
 const ANNOUNCE_CHANNEL = process.env.SLACK_BOT_CHANNEL;
 const MOPIDY_HOST_PORT = process.env.SLACK_BOT_MOPIDY_HOST_PORT || 'localhost:6680';
+const ICECAST_URL = process.env.SLACK_BOT_ICECAST_URL || 'http://icecast:8000';
 
 const { App, LogLevel } = require('@slack/bolt');
 
@@ -18,6 +19,27 @@ var getTrackName = function(track) {
 };
 
 const controller = {};
+
+controller.listeners = async function(say) {
+    debug('Handling \'listeners\' command');
+    try {
+        var status = await rp({
+            uri: ICECAST_URL + '/status-json.xsl',
+            json: true
+        });
+        debug('Icecast data:', status);
+        if (status.icestats && status.icestats.source) {
+            var listeners = status.icestats.source.listeners;
+            say('There are currently ' + listeners + ' listener(s)');
+        } else {
+            console.warn("Could not find listener information in IceCast output");
+            say('Could not get listeners :(');
+        }
+    } catch (error) {
+        console.warn('Could not get listeners information: ', error);
+        say('Could not get listeners :(');
+    }
+};
 
 controller.queue = async function(say) {
     debug('Handling \'queue\' command');
@@ -172,14 +194,20 @@ app.message('current', ({ message, say }) => {
     controller.current(say);
 });
 
+app.message('listeners', ({ message, say }) => {
+    controller.listeners(say);
+});
+
 app.event('app_mention', async ({ event, context }) => {
     if (event.text.match(/^<.+> queue/)) {
         controller.queue(get_say(event, context));
     } else if (event.text.match(/^<.+> skip/)) {
         controller.skip(get_say(event, context));
     } else if (event.text.match(/^<.+> current/)) {
-    controller.current(get_say(event, context));
-}
+        controller.current(get_say(event, context));
+    } else if (event.text.match(/^<.+> listeners/)) {
+        controller.listeners(get_say(event, context));
+    }
 });
 
 
