@@ -11,7 +11,7 @@ const { App, LogLevel } = require("@slack/bolt");
 
 //////////////////////////////////////////////////////////////////////
 // Utility functions
-function get_track_info(trackData, irisData) {
+function getTrackInfo(trackData, irisData) {
     var track = trackData.track;
     var artist = "Unknown Artist";
     if (track.artists && track.artists.length) {
@@ -21,9 +21,9 @@ function get_track_info(trackData, irisData) {
     if (irisData) {
         var trackInfo = irisData["tlid_" + trackData.tlid];
         if (trackInfo) {
-            var added_by = trackInfo["added_by"];
-            if (added_by) {
-                msg += " [Added by: " + added_by + "]";
+            var addedBy = trackInfo["added_by"];
+            if (addedBy) {
+                msg += " [Added by: " + addedBy + "]";
             }
         }
     }
@@ -31,7 +31,7 @@ function get_track_info(trackData, irisData) {
     return msg;
 };
 
-async function get_iris_data() {
+async function getIrisData() {
     var data = await rp({
         uri: "http://" + MOPIDY_HOST_PORT + "/iris/http/get_queue_metadata",
         json: true
@@ -45,7 +45,7 @@ async function get_iris_data() {
     return metadata;
 };
 
-async function get_queue_head() {
+async function getQueueHead() {
     var tracks = await mopidy.tracklist.getTlTracks();
     if (!tracks || !tracks.length) {
         return [];
@@ -84,7 +84,7 @@ controller.queue = async function(say) {
     debug("Handling 'queue' command");
 
     try {
-        var tracks = await get_queue_head();
+        var tracks = await getQueueHead();
         if (!tracks.length) {
             debug("Empty queue");
             say("Queue is empty");
@@ -92,10 +92,10 @@ controller.queue = async function(say) {
         }
         debug("Tracks:", tracks);
 
-        var irisData = await get_iris_data();
+        var irisData = await getIrisData();
         var msg = "";
         for (var i = 0; i < tracks.length; ++i) {
-            msg = msg + (i + 1) + ". " + get_track_info(tracks[i], irisData) + "\n";
+            msg = msg + (i + 1) + ". " + getTrackInfo(tracks[i], irisData) + "\n";
         }
         say("Here is the queue:\n" + msg);
     } catch (error) {
@@ -115,10 +115,10 @@ controller.current = async function(say) {
 
     try {
         var track = await mopidy.playback.getCurrentTlTrack();
-        var irisData = await get_iris_data();
+        var irisData = await getIrisData();
         var msg = "Nothing";
         if (track) {
-            msg = get_track_info(track, irisData);
+            msg = getTrackInfo(track, irisData);
         }
         debug("Current track: ", msg);
         msg = "Currently playing: " + msg;
@@ -130,19 +130,19 @@ controller.current = async function(say) {
 };
 
 controller.newTrack = async function (event) {
-    function say(message, channelId) {
+    function say(text, channelId) {
         return app.client.chat.postMessage({
             // TODO: ugly to use the token directly
             token: process.env.SLACK_BOT_TOKEN,
             channel: channelId,
-            text: message,
+            text,
         });
     }
 
     var track = event.tl_track;
     try {
-        var irisData = await get_iris_data();
-        var msg = "Playing: " + get_track_info(track, irisData);
+        var irisData = await getIrisData();
+        var msg = "Playing: " + getTrackInfo(track, irisData);
         debug(msg);
 
         try {
@@ -156,7 +156,7 @@ controller.newTrack = async function (event) {
     }
 
     try {
-        var tracks = await get_queue_head();
+        var tracks = await getQueueHead();
         if (!tracks.length) {
             debug("No more tracks in queue after the current song");
             say("No more tracks in queue after the current song", ANNOUNCE_CHANNEL);
@@ -188,24 +188,24 @@ mopidy.on("event", mopidy_debug);
 
 //////////////////////////////////////////////////////////////////////
 // Bolt
-const bolt_config = {
+const boltConfig = {
     signingSecret: process.env.SLACK_SIGNING_SECRET,
     token: process.env.SLACK_BOT_TOKEN
 };
-var bolt_debug = require("debug")("bolt");
-if (bolt_debug.enabled) {
-    bolt_config["logLevel"] = LogLevel.DEBUG;
+var boltDebug = require("debug")("bolt");
+if (boltDebug.enabled) {
+    boltConfig["logLevel"] = LogLevel.DEBUG;
 }
-const app = new App(bolt_config);
+const app = new App(boltConfig);
 
 // Construct a say() command from an event and a context
-function get_say(event, context) {
+function getSay(event, context) {
     return async function(text) {
         try {
             const result = await app.client.chat.postMessage({
                 token: context.botToken,
                 channel: event.channel,
-                text: text,
+                text,
             });
         }
         catch (error) {
@@ -232,13 +232,13 @@ app.message("listeners", ({ message, say }) => {
 
 app.event("app_mention", async ({ event, context }) => {
     if (event.text.match(/^<.+> queue/)) {
-        controller.queue(get_say(event, context));
+        controller.queue(getSay(event, context));
     } else if (event.text.match(/^<.+> skip/)) {
-        controller.skip(get_say(event, context));
+        controller.skip(getSay(event, context));
     } else if (event.text.match(/^<.+> current/)) {
-        controller.current(get_say(event, context));
+        controller.current(getSay(event, context));
     } else if (event.text.match(/^<.+> listeners/)) {
-        controller.listeners(get_say(event, context));
+        controller.listeners(getSay(event, context));
     }
 });
 
