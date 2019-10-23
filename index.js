@@ -1,9 +1,10 @@
 var rp = require('request-promise');
 var debug = require('debug')('slack-bot');
 
-const ANNOUNCE_CHANNEL = process.env.SLACK_BOT_CHANNEL;
+const PLAYLIST_CHANNEL = process.env.SLACK_BOT_CHANNEL_PLAYLIST;
+const ANNOUNCE_CHANNEL = process.env.SLACK_BOT_CHANNEL_ANNOUNCE;
 const MOPIDY_HOST_PORT = process.env.SLACK_BOT_MOPIDY_HOST_PORT || 'localhost:6680';
-const ICECAST_URL = process.env.SLACK_BOT_ICECAST_URL || 'http://icecast:8000';
+const ICECAST_URL = process.env.SLACK_BOT_ICECAST_URL || 'http://localhost:8000';
 
 const { App, LogLevel } = require('@slack/bolt');
 
@@ -41,21 +42,27 @@ controller.listeners = async function(say) {
     }
 };
 
+async function get_queue_head() {
+    var tracks = await mopidy.tracklist.getTracks();
+    if (!tracks || !tracks.length) {
+        return [];
+    }
+    var index = await mopidy.tracklist.index();
+    return tracks.slice(index + 1, index + 6);
+};
+
 controller.queue = async function(say) {
     debug('Handling \'queue\' command');
 
     try {
-        var tracks = await mopidy.tracklist.getTracks();
-        debug('Empty queue');
-        if (!tracks || !tracks.length) {
+        var tracks = await get_queue_head();
+        if (!tracks.length) {
+            debug('Empty queue');
             say('Queue is empty');
             return;
         }
         debug('Tracks:', tracks);
 
-        var index = await mopidy.tracklist.index();
-        debug('Got index: ', index);
-        tracks = tracks.slice(index + 1, index + 6);
         var msg = '';
         for (var i = 0; i < tracks.length; ++i) {
             msg = msg + (i + 1) + '. ' + getTrackName(tracks[i]) + '\n';
@@ -92,6 +99,15 @@ controller.current = async function(say) {
 };
 
 controller.newTrack = async function (event) {
+    function say(message, channel) {
+        return app.client.chat.postMessage({
+            // TODO: ugly to use the token directly
+            token: process.env.SLACK_BOT_TOKEN,
+            channel: channel,
+            text: message,
+        });
+    };
+
     // Event: https://docs.mopidy.com/en/latest/api/models/#mopidy.models.TlTrack
     var track = event.tl_track.track;
     // TLID is the connection between Mopidy and the Iris metadata
@@ -119,19 +135,24 @@ controller.newTrack = async function (event) {
         debug(msg);
 
         try {
-            const result = app.client.chat.postMessage({
-                // TODO: ugly to use the token directly
-                token: process.env.SLACK_BOT_TOKEN,
-                channel: ANNOUNCE_CHANNEL,
-                text: msg,
-            });
+            say(msg, PLAYLIST_CHANNEL);
         }
         catch (error) {
             console.error('got error sending message: ', error);
         }
     } catch (error) {
-            console.error('Got error from Iris HTTP call:', error);
-    };
+        console.error('Got error from Iris HTTP call:', error);
+    }
+
+    try {
+        var tracks = await get_queue_head();
+        if (!tracks.length) {
+            debug('No more tracks in queue after the current song');
+            say('No more tracks in queue after the current song', ANNOUNCE_CHANNEL);
+        }
+    } catch (error) {
+        console.error('Got error when trying to check queue:', error);
+    }
 };
 
 
