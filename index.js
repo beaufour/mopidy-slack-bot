@@ -10,15 +10,53 @@ const { App, LogLevel } = require('@slack/bolt');
 
 
 //////////////////////////////////////////////////////////////////////
-// Main logic
-var getTrackName = function(track) {
+// Utility functions
+function get_track_info(track_data, iris_data) {
+    var track = track_data.track;
     var artist = 'Unknown Artist';
     if (track.artists && track.artists.length) {
         artist = track.artists[0].name;
     };
-    return artist + ' - ' + track.name;
+    var msg = artist + ' - ' + track.name;
+    if (iris_data) {
+        var track_info = iris_data['tlid_' + track_data.tlid];
+        if (track_info) {
+            var added_by = track_info['added_by'];
+            if (added_by) {
+                msg += ' [Added by: ' + added_by + ']';
+            }
+        }
+    }
+
+    return msg;
 };
 
+async function get_iris_data() {
+    var data = await rp({
+        uri: 'http://' + MOPIDY_HOST_PORT + '/iris/http/get_queue_metadata',
+        json: true
+    });
+    if (!data.result || !data.result.queue_metadata) {
+        return;
+    }
+
+    var metadata = data.result.queue_metadata;
+    debug('Got iris data:', metadata);
+    return metadata;
+};
+
+async function get_queue_head() {
+    var tracks = await mopidy.tracklist.getTlTracks();
+    if (!tracks || !tracks.length) {
+        return [];
+    }
+    var index = await mopidy.tracklist.index();
+    return tracks.slice(index + 1, index + 6);
+};
+
+
+//////////////////////////////////////////////////////////////////////
+// Controller which holds the main app logic
 const controller = {};
 
 controller.listeners = async function(say) {
@@ -42,15 +80,6 @@ controller.listeners = async function(say) {
     }
 };
 
-async function get_queue_head() {
-    var tracks = await mopidy.tracklist.getTracks();
-    if (!tracks || !tracks.length) {
-        return [];
-    }
-    var index = await mopidy.tracklist.index();
-    return tracks.slice(index + 1, index + 6);
-};
-
 controller.queue = async function(say) {
     debug('Handling \'queue\' command');
 
@@ -63,9 +92,10 @@ controller.queue = async function(say) {
         }
         debug('Tracks:', tracks);
 
+        var iris_data = await get_iris_data();
         var msg = '';
         for (var i = 0; i < tracks.length; ++i) {
-            msg = msg + (i + 1) + '. ' + getTrackName(tracks[i]) + '\n';
+            msg = msg + (i + 1) + '. ' + get_track_info(tracks[i], iris_data) + '\n';
         }
         say('Here is the queue:\n' + msg);
     } catch (error) {
@@ -84,10 +114,11 @@ controller.current = async function(say) {
     debug('Handling \'current\' command');
 
     try {
-        var track = await mopidy.playback.getCurrentTrack();
+        var track = await mopidy.playback.getCurrentTlTrack();
+        var iris_data = await get_iris_data();
         var msg = 'Nothing';
         if (track) {
-            msg = getTrackName(track);
+            msg = get_track_info(track, iris_data);
         }
         debug('Current track: ', msg);
         msg = 'Currently playing: ' + msg;
@@ -107,31 +138,10 @@ controller.newTrack = async function (event) {
             text: message,
         });
     };
-
-    // Event: https://docs.mopidy.com/en/latest/api/models/#mopidy.models.TlTrack
-    var track = event.tl_track.track;
-    // TLID is the connection between Mopidy and the Iris metadata
-    var tlid = event.tl_track.tlid;
-    debug('Will look up Iris metadata for track #', tlid);
+    var track = event.tl_track;
     try {
-        var iris_data = await rp({
-            uri: 'http://' + MOPIDY_HOST_PORT + '/iris/http/get_queue_metadata',
-            json: true
-        });
-        var msg = 'Playing: ' + getTrackName(track);
-
-        if (iris_data.result && iris_data.result.queue_metadata) {
-            var metadata = iris_data.result.queue_metadata;
-            debug('Got iris data:', metadata);
-            var track_info = metadata['tlid_' + tlid];
-            if (track_info) {
-                var added_by = track_info['added_by'];
-                if (added_by) {
-                    msg += ' [Added by: ' + added_by + ']';
-                }
-            }
-        }
-
+        var iris_data = await get_iris_data();
+        var msg = 'Playing: ' + get_track_info(track, iris_data);
         debug(msg);
 
         try {
