@@ -25,7 +25,7 @@
         "node": "12.11.1"
     },
     "dependencies": {
-        "@slack/bolt": "2.7.0",
+        "@slack/bolt": "3.22.0",
         "debug": "^4.3.1",
         "mopidy": "1.1.0",
         "nodemon": "^3.0.0",
